@@ -42,7 +42,7 @@ pip install -r requirements.txt
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
 
-## ✨ Features
+## Features
 
 - **Owner, pets and tasks:** create, edit and delete pets and tasks (title, description, duration in minutes, priority, one or more pets).
 - **Priority scheduling:** tasks are placed in priority order, and a higher priority number is scheduled first. Ties keep the order they were entered in.
@@ -53,7 +53,52 @@ pip install -r requirements.txt
 - **Plan explanations:** every schedule can explain itself. Each placed task gets a reason (pinned time, or its priority rank and the earliest free gap), each unscheduled task says why it was left out, and `explain()` turns it into a short summary. The app shows it under "Why this plan?".
 - **Time totals and unscheduled tasks:** see how many minutes are planned and left, and which tasks didn't fit the window (or fall outside it, for fixed tasks).
 
-## ▶️ Running it
+## Architecture Overview
+
+The Plan Assistant (an agentic workflow) sits on top of the existing PawPal+ scheduler. The diagram's source is also in [`diagrams/ai-system-design.mmd`](diagrams/ai-system-design.mmd).
+
+```mermaid
+flowchart TD
+    U([Pet owner]) -->|natural-language request| UI[Streamlit text box / CLI entry point]
+    UI --> G{Input guardrails<br/>empty? too long? key present?}
+    G -->|invalid| ERR[Friendly error<br/>no API call made]
+    G -->|valid| AG
+
+    subgraph AGENT[Plan Assistant agent loop - max 3 attempts]
+        AG[1. PLAN<br/>Claude parses request into tool calls] --> ACT[2. ACT<br/>execute tools]
+        ACT --> CHK[3. CHECK<br/>conflicts? unscheduled? matches request?]
+        CHK -->|problems and attempts left| REV[4. REVISE<br/>Claude adjusts tasks]
+        REV --> ACT
+    end
+
+    ACT <-->|add_task, generate_schedule, get_conflicts| CORE[(PawPal+ core<br/>Owner, Pet, Task, Schedule)]
+    CHK -->|clean plan| CONF[Confidence scorer<br/>rule-based + model self-rating]
+    CHK -->|cap reached| ASK[Ask user to clarify]
+    ASK --> U
+    CONF --> OUT[Final plan + explain + confidence]
+    OUT --> UI
+    UI --> U
+
+    AG -.-> LOG[(agent.log)]
+    ACT -.-> LOG
+    CHK -.-> LOG
+    ERR -.-> LOG
+
+    EV[eval.py<br/>8-10 fixed test prompts] -->|runs the same agent| AG
+    EV --> REP[Pass/fail table + avg confidence]
+    OUT -->|human reviews plan and confidence| U
+    TESTS[pytest suite] -.->|tests| CORE
+```
+
+**How data flows:**
+
+1. **Input:** the owner types a request (Streamlit text box or CLI). Input guardrails reject empty or oversized requests and a missing API key before any API call is made.
+2. **Process:** the agent loop runs plan, act, check, revise. Claude calls tools that wrap the real PawPal+ classes (add tasks, generate the schedule, read conflicts), then checks the result against the request. It gets at most 3 attempts. If problems remain after that, it asks the owner to clarify instead of guessing.
+3. **Output:** a clean plan is scored for confidence (rule-based checks plus the model's self-rating) and shown with a plain-English explanation.
+
+**Where humans and testing check the AI:** the owner reviews the plan and confidence score and answers clarification questions. `eval.py` runs fixed prompts through the same agent and reports pass/fail and average confidence. The pytest suite tests the scheduling core. Every step is written to `agent.log`.
+
+## ▶Running it
 
 ```bash
 streamlit run app.py   # the interactive app
@@ -61,7 +106,7 @@ python main.py         # the CLI demo script
 pytest                 # the test suite
 ```
 
-## 🖥️ Sample Output
+## Sample Output
 
 Output from the CLI demo (`python main.py`), Step 4. Tasks are placed back to back from the start of the schedule window, with the highest priority number first:
 
@@ -109,7 +154,7 @@ Step 9 builds a separate schedule for each day of the current week (the dates de
     Fri Oct 16: 08:00 Morning walk, 08:30 Give joint supplement, 08:35 Clean litter box, 08:50 Playtime, 10:15 Grooming
 ```
 
-## 🧪 Testing PawPal+
+## Testing PawPal+
 
 ```
 # Run the full test suite:
@@ -139,7 +184,7 @@ The tests in `tests/test_pawpal.py` cover:
 - **Recurring tasks:** daily, weekly, one-time and any-day tasks, per-day schedules, and conflicts that only happen on days both tasks occur.
 - **Explanations:** reasons for pinned, flexible, and unscheduled tasks (overlap, outside the window, no gap long enough), a task going around a fixed task, reasons resetting on regenerate, tasks skipped as not due, and the `explain()` summary.
 
-## 📐 Smarter Scheduling
+## Smarter Scheduling
 
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
@@ -154,7 +199,7 @@ The tests in `tests/test_pawpal.py` cover:
 | Time totals | `Schedule.get_total_time`, `Schedule.get_available_time` | Calculated from the scheduled tasks (in minutes) instead of stored. |
 | Placements | `ScheduledTask`, `Schedule.get_placement` | Start and end times are stored on the schedule, not on the task. |
 
-## 📸 Demo Walkthrough
+## Demo Walkthrough
 
 **CLI demo (`python main.py`):**
 
@@ -177,7 +222,7 @@ Steps 4, 5, 8 and 9 also print the scheduler's reasons for what it did.
 3. In Build Schedule, choose the date and the time window, then generate. The schedule table, time totals, and any conflict or "couldn't fit" messages appear below, followed by a "Why this plan?" section explaining each decision.
 4. Use "Week at a glance" to see which tasks are due each day.
 
-## ⚠️ Known limitations
+## Known limitations
 
 - Data lives in memory for the session only, so it resets when the app restarts.
 - The scheduler doesn't reject zero or negative durations or an end time before the start time (the app form limits duration to 1-240 minutes).

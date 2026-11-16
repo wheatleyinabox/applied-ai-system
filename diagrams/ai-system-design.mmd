@@ -1,0 +1,30 @@
+flowchart TD
+    U([Pet owner]) -->|natural-language request| UI[Streamlit text box / CLI entry point]
+    UI --> G{Input guardrails<br/>empty? too long? key present?}
+    G -->|invalid| ERR[Friendly error<br/>no API call made]
+    G -->|valid| AG
+
+    subgraph AGENT[Plan Assistant agent loop - max 3 attempts]
+        AG[1. PLAN<br/>Claude parses request into tool calls] --> ACT[2. ACT<br/>execute tools]
+        ACT --> CHK[3. CHECK<br/>conflicts? unscheduled? matches request?]
+        CHK -->|problems and attempts left| REV[4. REVISE<br/>Claude adjusts tasks]
+        REV --> ACT
+    end
+
+    ACT <-->|add_task, generate_schedule, get_conflicts| CORE[(PawPal+ core<br/>Owner, Pet, Task, Schedule)]
+    CHK -->|clean plan| CONF[Confidence scorer<br/>rule-based + model self-rating]
+    CHK -->|cap reached| ASK[Ask user to clarify]
+    ASK --> U
+    CONF --> OUT[Final plan + explain + confidence]
+    OUT --> UI
+    UI --> U
+
+    AG -.-> LOG[(agent.log)]
+    ACT -.-> LOG
+    CHK -.-> LOG
+    ERR -.-> LOG
+
+    EV[eval.py<br/>8-10 fixed test prompts] -->|runs the same agent| AG
+    EV --> REP[Pass/fail table + avg confidence]
+    OUT -->|human reviews plan and confidence| U
+    TESTS[pytest suite] -.->|tests| CORE

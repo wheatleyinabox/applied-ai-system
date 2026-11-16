@@ -89,14 +89,20 @@ def build_system_prompt(pets: list[Pet], plan_date: date, toolbox: PlanToolbox) 
     )
 
 
-def _call_claude(client, system: str, messages: list[dict], tools: list[dict] | None):
-    """One Messages API call. Fallbacks reroute a safety refusal to a backup model."""
+def _call_claude(client, system: str, messages: list[dict], tools: list[dict] | None,
+                 tool_choice: str = "auto"):
+    """One Messages API call. Fallbacks reroute a safety refusal to a backup model.
+
+    If the history contains earlier tool turns, always send the SAME tools list: the API
+    ties Claude's saved reasoning to it and rejects the call otherwise. To stop Claude from
+    using tools on a later call, pass tool_choice="none" instead of removing them.
+    """
     kwargs = dict(model=MODEL, max_tokens=4096, system=system, messages=messages,
                   output_config={"effort": "medium"},
                   betas=["server-side-fallback-2026-07-01"], fallbacks="default")
     if tools:
         kwargs["tools"] = tools
-        kwargs["tool_choice"] = {"type": "auto"}
+        kwargs["tool_choice"] = {"type": tool_choice}
     return client.beta.messages.create(**kwargs)
 
 
@@ -142,7 +148,7 @@ def _ask_clarifying_question(client, system: str, messages: list[dict], problems
         "You could not produce a clean plan. Problems: " + " | ".join(problems) +
         "\nDo not call tools. Write ONE short, specific question for the owner whose "
         "answer would let you fix this (for example which task to drop or move).")}]
-    response = _call_claude(client, system, ask, None)
+    response = _call_claude(client, system, ask, TOOL_SCHEMAS, tool_choice="none")
     return next((b.text for b in response.content if b.type == "text"), "").strip() or \
         "Could you tell me which task matters most, or give more detail about times and durations?"
 

@@ -178,6 +178,69 @@ def test_tool_errors_are_returned_to_the_model_as_errors(pets):
     assert tool_result["is_error"] is True and "Unknown pet" in tool_result["content"]
 
 
+class Recorder(FakeClaude):
+    """FakeClaude that remembers every request the agent sent."""
+    def __init__(self, replies):
+        super().__init__(replies)
+        self.calls = []
+
+    def _create(self, **kwargs):
+        self.calls.append({**kwargs, "messages": list(kwargs["messages"])})
+        return super()._create(**kwargs)
+
+
+# A: text with no tool calls is a question for the owner, shown immediately
+def test_model_asking_a_question_is_returned_at_once_without_retries(pets):
+    client = Recorder([reply("end_turn", say("How long should the supplement take?"))])
+    result = run_plan_assistant("walk Max and give supplements", pets, DAY, client=client)
+    assert result.status == "needs_clarification"
+    assert result.message == "How long should the supplement take?"
+    assert result.attempts == 1 and len(client.calls) == 1
+
+
+def test_text_only_reply_after_tasks_exist_is_not_treated_as_a_question(pets):
+    result = run("Walk Max", pets, [reply("tool_use", add(1)), END, END, RATE])
+    assert result.status == "ok"
+
+
+# B: a low model rating sends the plan back for revision
+def test_low_self_rating_triggers_a_revision_with_the_reason(pets):
+    low = reply("end_turn", say("RATING: 0.4 | REASON: The supplement task is missing."))
+    second = reply("tool_use", add(2, title="Supplement", duration=5))
+    client = Recorder([reply("tool_use", add(1)), END, low, second, END, RATE])
+    result = run_plan_assistant("walk and supplement", pets, DAY, client=client)
+    assert (result.status, result.attempts) == ("ok", 2)
+    assert result.confidence == 0.85  # attempt 2: rule 0.8, model 0.9
+    revise_message = next(m for c in client.calls for m in c["messages"]
+                          if m["role"] == "user" and "reviewer rated" in str(m["content"]))
+    assert "supplement task is missing" in revise_message["content"]
+
+
+def test_low_rating_on_the_last_attempt_is_accepted_with_low_confidence(pets):
+    low = reply("end_turn", say("RATING: 0.4 | REASON: Not great."))
+    result = run_plan_assistant("Walk Max", pets, DAY, client=FakeClaude([reply("tool_use", add(1)), END, low]),
+                                max_attempts=1)
+    assert result.status == "ok" and result.confidence == 0.7  # (1.0 + 0.4) / 2
+
+
+# C: repeating tasks that aren't due on the plan date
+def test_task_not_due_on_the_plan_date_gives_an_ok_plan_that_says_so(pets):
+    inhaler = reply("tool_use", add(1, title="Inhaler", pet_names=["Luna"], repeat_days=["Tue"]))
+    client = Recorder([inhaler, END, RATE])
+    result = run_plan_assistant("Luna's inhaler every Tuesday", pets, DAY, client=client)  # DAY is a Monday
+    assert result.status == "ok" and result.schedule_lines == []
+    assert result.not_due == ["Inhaler (Tue)"]
+    assert result.confidence == 0.95  # not 0: an empty day is legitimate here
+    rating_prompt = client.calls[-1]["messages"][0]["content"]
+    assert "repeats: Tue" in rating_prompt and "nothing is due that day" in rating_prompt
+
+
+def test_rule_score_is_not_zero_when_tasks_exist_but_none_are_due(toolbox):
+    toolbox.run("add_task", add_args(repeat_days=["Tue"]))
+    toolbox.run("generate_schedule", {})
+    assert rule_score(toolbox, 1) == 1.0
+
+
 def test_clarifying_question_call_keeps_the_tools_list_but_forbids_tool_use(pets):
     """Regression: the live API rejected this call when the tools list was dropped."""
     calls = []

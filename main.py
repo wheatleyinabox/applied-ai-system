@@ -1,6 +1,9 @@
 from datetime import date, time, timedelta
 
+from types import SimpleNamespace
+
 from agent_tools import PlanToolbox
+from plan_assistant import run_plan_assistant
 from pawpal_system import ALL_DAYS, Pet, User, Task, Schedule
 
 
@@ -233,6 +236,71 @@ def main() -> None:
     for label, result, passed in checks:
         print(f"  {'PASS' if passed(result) else 'FAIL'}  {label}")
     print(f"  {sum(passed(r) for _, r, passed in checks)} of {len(checks)} checks passed")
+
+    # Step 11: the Plan Assistant agent, driven by a scripted fake Claude (no API call, no cost)
+    print("\nStep 11: Plan Assistant (offline, scripted fake Claude)")
+
+    def tool_call(n, name, **args):
+        return SimpleNamespace(type="tool_use", id=f"t{n}", name=name, input=args)
+
+    def reply(stop, *blocks):
+        return SimpleNamespace(stop_reason=stop, content=list(blocks))
+
+    def say(text):
+        return SimpleNamespace(type="text", text=text)
+
+    class FakeClaude:
+        """Hands back pre-written replies in order, like the real API would."""
+        def __init__(self, replies):
+            self.replies = list(replies)
+            self.beta = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: self.replies.pop(0)))
+
+    pins = reply("tool_use",
+                 tool_call(1, "add_task", title="Meds", duration=5, priority="high",
+                           pet_names=["Luna"], fixed_start="09:00"),
+                 tool_call(2, "add_task", title="Vet", duration=60, priority="medium",
+                           pet_names=["Luna"], fixed_start="09:00"))
+    done = reply("end_turn", say("Done."))
+    fix = reply("tool_use", tool_call(3, "remove_task", title="Vet"),
+                tool_call(4, "add_task", title="Vet", duration=60, priority="medium", pet_names=["Luna"]))
+    rate = reply("end_turn", say("RATING: 0.9 | REASON: Both tasks were scheduled."))
+    day = wednesday
+    assistant_checks = [
+        ("Clean request: plan built on attempt 1",
+         run_plan_assistant("Walk Max 30 min", [max_dog, luna], day, client=FakeClaude([
+             reply("tool_use", tool_call(1, "add_task", title="Walk", duration=30, priority="high",
+                                         pet_names=["Max"])), done, rate])),
+         lambda r: r.status == "ok" and r.attempts == 1 and r.confidence == 0.95),
+        ("Conflict fixed on attempt 2 (revise step works, confidence drops)",
+         run_plan_assistant("Meds and vet at 9", [max_dog, luna], day, client=FakeClaude(
+             [pins, done, fix, done, rate])),
+         lambda r: r.status == "ok" and r.attempts == 2 and r.confidence == 0.85),
+        ("Conflict never fixed: asks a specific question after 3 attempts",
+         run_plan_assistant("Meds and vet at 9", [max_dog, luna], day, client=FakeClaude(
+             [pins, done, done, done, reply("end_turn", say("Which 9:00 task should move?"))])),
+         lambda r: r.status == "needs_clarification" and r.attempts == 3 and r.message.endswith("?")),
+        ("Malformed self-rating: falls back to the rule score",
+         run_plan_assistant("Walk Max 30 min", [max_dog, luna], day, client=FakeClaude([
+             reply("tool_use", tool_call(1, "add_task", title="Walk", duration=30, priority="high",
+                                         pet_names=["Max"])), done, reply("end_turn", say("pretty good!"))])),
+         lambda r: r.status == "ok" and r.confidence == 1.0 and "unavailable" in r.confidence_note),
+        ("Guardrail: empty request",
+         run_plan_assistant("   ", [max_dog, luna], day, client=FakeClaude([])),
+         lambda r: r.status == "error" and "type a request" in r.message),
+        ("Guardrail: oversized request",
+         run_plan_assistant("x" * 2000, [max_dog, luna], day, client=FakeClaude([])),
+         lambda r: r.status == "error" and "too long" in r.message),
+        ("Guardrail: no pets",
+         run_plan_assistant("Walk the dog", [], day, client=FakeClaude([])),
+         lambda r: r.status == "error" and "at least one pet" in r.message),
+    ]
+    for label, result, passed in assistant_checks:
+        print(f"  {'PASS' if passed(result) else 'FAIL'}  {label}")
+        if result.status == "ok":
+            print(f"        confidence {result.confidence}: {result.confidence_note}")
+        elif result.status == "needs_clarification":
+            print(f"        question: {result.message}")
+    print(f"  {sum(passed(r) for _, r, passed in assistant_checks)} of {len(assistant_checks)} checks passed")
 
 
 if __name__ == "__main__":

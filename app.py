@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import date, time
 
 from pawpal_system import ALL_DAYS, WEEKDAY_NAMES, Pet, Schedule, Task, User, filter_by_pet
+from plan_assistant import run_plan_assistant
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -288,6 +289,53 @@ def pet_filter(key: str):
 #             user.remove_task(task)
 #             user.set_schedules([])
 #             st.rerun()
+
+st.divider()
+
+st.subheader("Task Assistant")
+st.caption(
+    "Describe what your pets need in plain English. The assistant adds the tasks, builds a "
+    "schedule, checks it for conflicts, and fixes what it can. Nothing is saved until you click "
+    "'Add to my plan'."
+)
+assistant_request = st.text_area(
+    "What do your pets need today?",
+    max_chars=1000,
+    placeholder="e.g. Walk Max for 30 minutes every morning and give Luna her medication at 9am.",
+)
+assistant_day = st.date_input("Plan the assistant's tasks for", value=date.today(), key="assistant_day")
+
+if st.button("Ask Task Assistant"):
+    with st.spinner("The assistant is planning and checking its work..."):
+        st.session_state.assistant_result = run_plan_assistant(
+            assistant_request, user.get_pets(), assistant_day
+        )
+
+result = st.session_state.get("assistant_result")
+if result is not None:
+    if result.status == "error":
+        st.error(result.message)
+    elif result.status == "needs_clarification":
+        st.warning(
+            f"I couldn't build a clean plan after {result.attempts} attempts. "
+            f"I need one more detail: {result.message}"
+        )
+        st.caption("Answer in the box above (add the detail to your request) and ask again.")
+    else:
+        st.success(f"Plan ready (attempts used: {result.attempts})")
+        st.table([{"Time and task": line} for line in result.schedule_lines])
+        st.metric("Confidence", f"{result.confidence:.0%}")
+        st.caption(f"How this was scored: {result.confidence_note}")
+        if result.confidence < 0.7:
+            st.warning("Confidence is low. Please review this plan carefully before adding it.")
+        with st.expander("Why this plan?"):
+            st.markdown(result.explanation)
+        if st.button("Add to my plan"):
+            for task in result.toolbox.tasks:
+                user.add_task(task)
+            user.set_schedules([result.toolbox.schedule])  # shows in Build Schedule below
+            st.session_state.assistant_result = None
+            st.rerun()
 
 st.divider()
 

@@ -396,6 +396,7 @@ Average confidence on successful plans: 0.95; average attempts: 1.0.
 9. **Recurring tasks:** set tasks to repeat daily or on chosen weekdays, add a one-time task, and build a schedule for each day of the week.
 
 **Streamlit app (`streamlit run app.py`):**
+**!! with AI task assistant !!**
 
 1. Add the owner and pets.
 2. Type in your task request into the textbox and click "Ask Task Assistant" and wait. If ask clarification questions, update your prompt. If a plan is generated, review before clicking "Add to my plan"

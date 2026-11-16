@@ -1,5 +1,6 @@
 from datetime import date, time, timedelta
 
+from agent_tools import PlanToolbox
 from pawpal_system import ALL_DAYS, Pet, User, Task, Schedule
 
 
@@ -193,6 +194,46 @@ def main() -> None:
     print(f"  Due on {wednesday:%a}: {[t.get_title() for t in user.get_tasks_for_date(wednesday)]}")
     print(f"  Due on {wednesday:%a} for Luna: "
           f"{[t.get_title() for t in user.get_tasks_for_date(wednesday) if luna in t.get_pets()]}")
+
+    # Step 10: the agent's tools (no API call, so this runs offline)
+    print("\nStep 10: Agent tools (PlanToolbox)")
+    toolbox = PlanToolbox([max_dog, luna], plan_date=wednesday)
+    checks = [
+        ("Add a flexible task (pet name in lowercase)",
+         toolbox.run("add_task", dict(title="Walk", duration=30, priority="high", pet_names=["max"])),
+         lambda r: r.get("ok") is True),
+        ("Add a task pinned to 09:00",
+         toolbox.run("add_task", dict(title="Meds", duration=5, priority="high",
+                                      pet_names=["Luna"], fixed_start="09:00")),
+         lambda r: r.get("ok") is True),
+        ("Add a lower-priority task pinned to the same time",
+         toolbox.run("add_task", dict(title="Vet", duration=60, priority="medium",
+                                      pet_names=["Luna"], fixed_start="09:00")),
+         lambda r: r.get("ok") is True),
+        ("Reject an unknown pet",
+         toolbox.run("add_task", dict(title="X", duration=5, priority="low", pet_names=["Rex"])),
+         lambda r: "Unknown pet" in r.get("error", "")),
+        ("Reject a bad time format",
+         toolbox.run("add_task", dict(title="X", duration=5, priority="low",
+                                      pet_names=["Max"], fixed_start="9am")),
+         lambda r: "Invalid time" in r.get("error", "")),
+        ("Reject missing arguments",
+         toolbox.run("add_task", dict(title="X")),
+         lambda r: "Bad arguments" in r.get("error", "")),
+        ("Generate the schedule",
+         toolbox.run("generate_schedule", {}),
+         lambda r: r.get("unscheduled") == ["Vet"]),
+        ("Report the conflict and its reason",
+         toolbox.run("get_conflicts", {}),
+         lambda r: r.get("conflicts") == ["'Vet' overlaps 'Meds'"]),
+        ("Reject an unknown tool name",
+         toolbox.run("nope", {}),
+         lambda r: "Unknown tool" in r.get("error", "")),
+    ]
+    for label, result, passed in checks:
+        print(f"  {'PASS' if passed(result) else 'FAIL'}  {label}")
+    print(f"  {sum(passed(r) for _, r, passed in checks)} of {len(checks)} checks passed")
+
 
 if __name__ == "__main__":
     main()

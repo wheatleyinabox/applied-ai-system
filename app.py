@@ -348,21 +348,21 @@ with col2:
 with col3:
     window_end = st.time_input("End time", value=time(20, 0))
 
-if st.button("Generate schedule"):
-    if window_end <= window_start:
-        st.error("End time must be after start time.")
-    elif not user.get_tasks():
-        st.warning("Add at least one task first.")
-    else:
-        schedule = Schedule(
-            title=f"Plan for {plan_day:%a %b %d}",
-            start_time=window_start,
-            end_time=window_end,
-            plan_date=plan_day,
-        )
-        schedule.generate_schedule(user.get_tasks())
-        user.set_schedules([schedule])  # keep only the latest schedule
-        st.rerun()  # the tasks table above was already drawn, so redraw it with this schedule
+# if st.button("Generate schedule"):
+#     if window_end <= window_start:
+#         st.error("End time must be after start time.")
+#     elif not user.get_tasks():
+#         st.warning("Add at least one task first.")
+#     else:
+#         schedule = Schedule(
+#             title=f"Plan for {plan_day:%a %b %d}",
+#             start_time=window_start,
+#             end_time=window_end,
+#             plan_date=plan_day,
+#         )
+#         schedule.generate_schedule(user.get_tasks())
+#         user.set_schedules([schedule])  # keep only the latest schedule
+#         st.rerun()  # the tasks table above was already drawn, so redraw it with this schedule
 
 schedules = user.get_schedules()
 if schedules:

@@ -303,7 +303,13 @@ assistant_request = st.text_area(
     max_chars=1000,
     placeholder="e.g. Walk Max for 30 minutes every morning and give Luna her medication at 9am.",
 )
-assistant_day = st.date_input("Plan the assistant's tasks for", value=date.today(), key="assistant_day")
+assistant_day = st.date_input(
+    "Plan for this date",
+    value=date.today(),
+    key="assistant_day",
+    help="The schedule is built for this one day. Repeating tasks only appear if they are due "
+         "on it (for example, a Monday task won't show on a Sunday).",
+)
 
 if st.button("Ask Task Assistant"):
     with st.spinner("The assistant is planning and checking its work..."):
@@ -316,14 +322,22 @@ if result is not None:
     if result.status == "error":
         st.error(result.message)
     elif result.status == "needs_clarification":
-        st.warning(
-            f"I couldn't build a clean plan after {result.attempts} attempts. "
-            f"I need one more detail: {result.message}"
+        st.warning(f"I need one more detail before I can build this plan: {result.message}")
+        st.caption(
+            "Add the detail to your request above and ask again. "
+            f"(Attempts used: {result.attempts})"
         )
-        st.caption("Answer in the box above (add the detail to your request) and ask again.")
     else:
         st.success(f"Plan ready (attempts used: {result.attempts})")
-        st.table([{"Time and task": line} for line in result.schedule_lines])
+        if result.schedule_lines:
+            st.table([{"Time and task": line} for line in result.schedule_lines])
+        else:
+            st.info(f"Nothing is due on {result.toolbox.plan_date:%A %b %d}.")
+        if result.not_due:
+            st.info(
+                f"Saved, but not due on {result.toolbox.plan_date:%A %b %d} (they repeat on other days): "
+                + ", ".join(result.not_due)
+            )
         st.metric("Confidence", f"{result.confidence:.0%}")
         st.caption(f"How this was scored: {result.confidence_note}")
         if result.confidence < 0.7:

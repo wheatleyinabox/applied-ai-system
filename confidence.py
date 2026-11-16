@@ -17,9 +17,13 @@ SLACK_FACTOR = 0.8
 
 
 def rule_score(toolbox: PlanToolbox, attempts: int) -> float:
-    """Confidence from run facts. Needs a built schedule; returns 0.0 if there isn't one."""
+    """Confidence from run facts. Returns 0.0 if no tasks were saved or no schedule was built.
+
+    A day with nothing scheduled is not penalized when tasks exist: repeating tasks that
+    aren't due on the plan date legitimately leave it empty.
+    """
     schedule = toolbox.schedule
-    if schedule is None or not schedule.get_tasks():
+    if schedule is None or not toolbox.tasks:
         return 0.0
     score = max(1.0 - ATTEMPT_PENALTY * (attempts - 1), 0.0)
     window = (toolbox.end.hour - toolbox.start.hour) * 60 + (toolbox.end.minute - toolbox.start.minute)

@@ -26,6 +26,7 @@ MODEL = "claude-sonnet-5-5"
 MAX_ATTEMPTS = 3         # revise cap before asking the user to clarify
 MAX_TOOL_TURNS = 12      # safety cap on tool round-trips inside one attempt
 MAX_INPUT_CHARS = 1000   # guardrail on request length
+MIN_RATING = 0.7         # a model self-rating below this sends the plan back for revision
 
 logger = logging.getLogger("pawpal.agent")
 
@@ -51,6 +52,7 @@ class PlanResult:
     toolbox: PlanToolbox | None = None
     confidence: float | None = None  # 0.0-1.0, set only when status == "ok"
     confidence_note: str = ""        # how the score was reached, shown next to it
+    not_due: list[str] = field(default_factory=list)  # saved tasks that aren't due on the plan date
 
 
 def validate_request(request: str, pets: list[Pet], client) -> str | None:
@@ -106,23 +108,31 @@ def _call_claude(client, system: str, messages: list[dict], tools: list[dict] | 
     return client.beta.messages.create(**kwargs)
 
 
-def _run_pass(client, system: str, messages: list[dict], toolbox: PlanToolbox) -> None:
-    """PLAN + ACT: let Claude call tools until it stops asking for them."""
+def _run_pass(client, system: str, messages: list[dict], toolbox: PlanToolbox) -> tuple[str, bool]:
+    """PLAN + ACT: let Claude call tools until it stops asking for them.
+
+    Returns (Claude's last text, whether it called any tool). Text with no tool calls
+    usually means Claude is asking the owner something.
+    """
+    made_calls, text = False, ""
     for _ in range(MAX_TOOL_TURNS):
         response = _call_claude(client, system, messages, TOOL_SCHEMAS)
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason == "refusal":
             raise RuntimeError("The model declined this request.")
+        text = " ".join(b.text for b in response.content if b.type == "text").strip()
         if response.stop_reason != "tool_use":
-            return
+            return text, made_calls
         results = []
         for block in response.content:
             if block.type == "tool_use":
+                made_calls = True
                 output = toolbox.run(block.name, block.input)
                 results.append({"type": "tool_result", "tool_use_id": block.id,
                                 "content": str(output), "is_error": "error" in output})
         messages.append({"role": "user", "content": results})  # all results in ONE message
     logger.warning("tool turn cap reached in one attempt")
+    return text, made_calls
 
 
 def check_plan(toolbox: PlanToolbox) -> list[str]:
@@ -153,13 +163,25 @@ def _ask_clarifying_question(client, system: str, messages: list[dict], problems
         "Could you tell me which task matters most, or give more detail about times and durations?"
 
 
+def _describe_task(task) -> str:
+    """One readable line per saved task, including its pets, time and repeat rule."""
+    when = f"pinned to {task.fixed_start:%H:%M}" if task.fixed_start else "flexible time"
+    pets = ", ".join(p.name for p in task.pets)
+    return f"- {task.title}: {task.duration} min, {pets}, {when}, repeats: {task.describe_repeat()}"
+
+
 def _self_rate(client, request: str, toolbox: PlanToolbox) -> tuple[float | None, str]:
     """Ask Claude how well the finished plan matches the request. (None, '') on any failure."""
     plan = "\n".join(f"{p.start_time:%H:%M}-{p.end_time:%H:%M} {p.title}"
-                     for p in toolbox.schedule.get_tasks_by_time())
-    prompt = (f"Owner's request:\n{request}\n\nPlan that was built:\n{plan}\n\n"
-              "Rate from 0.0 to 1.0 how completely and accurately the plan matches the request "
-              "(missing tasks, wrong times or wrong pets lower it). Reply in exactly this format:\n"
+                     for p in toolbox.schedule.get_tasks_by_time()) or "(nothing is due that day)"
+    saved = "\n".join(_describe_task(t) for t in toolbox.tasks)
+    prompt = (f"Owner's request:\n{request}\n\n"
+              f"Tasks saved, with their repeat rules:\n{saved}\n\n"
+              f"Schedule for {toolbox.plan_date:%A %Y-%m-%d} (only tasks due that day appear):\n{plan}\n\n"
+              "Rate from 0.0 to 1.0 how completely and accurately the saved TASKS match the request "
+              "(missing tasks, wrong times, durations, pets or repeat rules lower it). A repeating task "
+              "that isn't due on the schedule date is correctly absent from that day's schedule; do not "
+              "penalize that. Reply in exactly this format:\n"
               "RATING: <number> | REASON: <one short sentence>")
     try:
         response = _call_claude(client, "You are a strict reviewer of pet care plans.",
@@ -192,13 +214,25 @@ def run_plan_assistant(request: str, pets: list[Pet], plan_date: date | None = N
 
         for attempt in range(1, max_attempts + 1):
             logger.info("attempt %d/%d", attempt, max_attempts)
-            _run_pass(client, system, messages, toolbox)
+            text, made_calls = _run_pass(client, system, messages, toolbox)
+            if not made_calls and not toolbox.tasks and text:
+                # Claude used no tools and replied in words: it is asking the owner something.
+                logger.info("model asked the owner directly: %s", text)
+                return PlanResult(status="needs_clarification", message=text,
+                                  attempts=attempt, toolbox=toolbox)
             problems = check_plan(toolbox)
             logger.info("check after attempt %d: %s", attempt, problems or "clean")
             if not problems:
                 schedule = toolbox.schedule
                 rule = rule_score(toolbox, attempt)
                 rating, reason = _self_rate(client, request, toolbox)
+                if rating is not None and rating < MIN_RATING and attempt < max_attempts:
+                    logger.info("self-rating %.2f is below %.2f; revising: %s", rating, MIN_RATING, reason)
+                    messages.append({"role": "user", "content": (
+                        f"A reviewer rated this plan {rating:.2f} against the owner's request: {reason}\n"
+                        "If that is a real gap, fix it with the tools. If the request is ambiguous, "
+                        "ask the owner instead of guessing.")})
+                    continue
                 score = combine(rule, rating)
                 note = (f"rule {rule:.2f}, model {rating:.2f}" if rating is not None
                         else f"rule {rule:.2f}, model rating unavailable") + (f" ({reason})" if reason else "")
@@ -206,6 +240,7 @@ def run_plan_assistant(request: str, pets: list[Pet], plan_date: date | None = N
                 return PlanResult(
                     status="ok", attempts=attempt, toolbox=toolbox, explanation=schedule.explain(),
                     confidence=score, confidence_note=note,
+                    not_due=[f"{t.title} ({t.describe_repeat()})" for t in schedule.get_not_due_tasks()],
                     schedule_lines=[f"{p.start_time:%H:%M}-{p.end_time:%H:%M} {p.title}"
                                     for p in schedule.get_tasks_by_time()])
             messages.append({"role": "user", "content": (

@@ -1,6 +1,6 @@
 """A scripted stand-in for the Anthropic client, so the agent can be run offline for free.
 
-Used by main.py (Step 11) and eval.py (offline mode). It returns pre-written replies in
+Used by main.py (Step 11) and evaluations/eval.py (offline mode). It returns pre-written replies in
 order. When the script runs out it keeps answering with a short question, which is what
 the agent sees when it asks for clarification.
 """

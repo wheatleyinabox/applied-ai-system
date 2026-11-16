@@ -7,7 +7,7 @@ from datetime import date, time
 import pytest
 
 from agent_tools import PlanToolbox
-from confidence import combine, parse_rating, rule_score
+from evaluations.confidence import combine, parse_rating, rule_score
 from fake_claude import FakeClaude, reply, say, tool_call
 from pawpal_system import Pet
 from plan_assistant import MAX_INPUT_CHARS, run_plan_assistant

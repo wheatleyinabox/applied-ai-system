@@ -17,7 +17,7 @@ import anthropic
 from dotenv import load_dotenv
 
 from agent_tools import PRIORITIES, TOOL_SCHEMAS, PlanToolbox
-from confidence import combine, parse_rating, rule_score
+from evaluations.confidence import combine, parse_rating, rule_score
 from pawpal_system import Pet
 
 load_dotenv()  # reads ANTHROPIC_API_KEY from .env

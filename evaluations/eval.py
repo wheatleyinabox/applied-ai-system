@@ -1,13 +1,14 @@
 """Evaluation harness for the Plan Assistant.
 
-    python eval.py                 # offline: scripted fake Claude, free, repeatable
-    python eval.py --live          # real Anthropic API (costs a little; needs ANTHROPIC_API_KEY)
-    python eval.py --live --runs 3 # run each case 3 times to check consistency
+    python evaluations/eval.py                 # offline: scripted fake Claude, free, repeatable
+    python evaluations/eval.py --live          # real Anthropic API (costs a little; needs ANTHROPIC_API_KEY)
+    python evaluations/eval.py --live --runs 3 # run each case 3 times to check consistency
 
 Offline mode tests everything AROUND the model (guardrails, the check/revise loop, the
 attempt cap, confidence scoring) because the model's replies are scripted. Live mode is
 the one that tests the model itself.
-Results are printed and saved as a markdown table (eval_results_offline.md / _live.md).
+Results are printed and saved as a markdown table in evaluations/results/
+(eval_results_offline.md or eval_results_live.md).
 """
 from __future__ import annotations
 
@@ -16,12 +17,19 @@ import os
 import sys
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from fake_claude import FakeClaude, reply, say, tool_call
-from pawpal_system import Pet
-from plan_assistant import PlanResult, run_plan_assistant
+# This file lives in evaluations/, so put the project root on the import path. That lets
+# `python evaluations/eval.py` find plan_assistant, fake_claude and the other root modules.
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+RESULTS_DIR = Path(__file__).resolve().parent / "results"
+
+from fake_claude import FakeClaude, reply, say, tool_call  # noqa: E402
+from pawpal_system import Pet  # noqa: E402
+from plan_assistant import PlanResult, run_plan_assistant  # noqa: E402
 
 load_dotenv()
 
@@ -124,8 +132,8 @@ def main() -> int:
                      f"average attempts: {sum(attempts_used) / len(attempts_used):.1f}.")
     report = "\n".join(lines)
     print(report)
-    with open(f"eval_results_{mode}.md", "w") as f:
-        f.write(report + "\n")
+    RESULTS_DIR.mkdir(exist_ok=True)
+    (RESULTS_DIR / f"eval_results_{mode}.md").write_text(report + "\n")
     return 0 if passes == total else 1
 
 

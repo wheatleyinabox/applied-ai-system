@@ -241,6 +241,52 @@ def test_rule_score_is_not_zero_when_tasks_exist_but_none_are_due(toolbox):
     assert rule_score(toolbox, 1) == 1.0
 
 
+# D: tasks the owner already saved
+def saved_vet(pets):
+    """An already-saved task, pinned to 09:00 like the owner might have added earlier."""
+    from pawpal_system import Task
+    return Task(title="Vet visit", duration=60, priority=3, pets=[pets[1]], fixed_start=time(9, 0))
+
+
+def test_saved_tasks_are_locked_and_new_tasks_are_tracked_separately(pets):
+    vet = saved_vet(pets)
+    toolbox = PlanToolbox(pets, DAY, existing_tasks=[vet])
+    toolbox.run("add_task", add_args())
+    assert toolbox.new_tasks == [toolbox.tasks[1]] and toolbox.tasks[0] is vet
+    error = toolbox.run("remove_task", {"title": "vet visit"})["error"]
+    assert "saved earlier" in error and toolbox.tasks[0] is vet
+    assert toolbox.run("remove_task", {"title": "Walk"})["removed"] == 1
+
+
+def test_new_task_that_clashes_with_a_saved_one_is_fixed_by_changing_the_new_task(pets):
+    vet = saved_vet(pets)
+    clash = reply("tool_use", add(1, title="Meds", pet_names=["Luna"], duration=5, fixed_start="09:00",
+                                  priority="medium"))
+    fix = reply("tool_use", tool_call(2, "remove_task", title="Vet visit"),  # tries to remove the saved one
+                tool_call(3, "remove_task", title="Meds"),
+                add(4, title="Meds", pet_names=["Luna"], duration=5, priority="medium"))
+    client = Recorder([clash, END, fix, END, RATE])
+    result = run_plan_assistant("Luna's meds at 9", pets, DAY, client=client, existing_tasks=[vet])
+    assert (result.status, result.attempts) == ("ok", 2)
+    assert [t.title for t in result.toolbox.new_tasks] == ["Meds"]
+    assert any("Vet visit" in line for line in result.schedule_lines)  # saved task still scheduled
+    assert any("Meds" in line for line in result.schedule_lines)
+    assert "Vet visit" in client.calls[0]["system"]  # Claude was told what is already saved
+
+
+def test_request_that_only_repeats_saved_tasks_gets_a_note_not_duplicates(pets):
+    client = Recorder([reply("end_turn", say("The vet visit is already saved."))])
+    result = run_plan_assistant("vet visit at 9", pets, DAY, client=client, existing_tasks=[saved_vet(pets)])
+    assert result.status == "needs_clarification" and "already saved" in result.message
+    assert result.toolbox.new_tasks == [] and len(client.calls) == 1
+
+
+def test_rating_prompt_marks_saved_tasks(pets):
+    client = Recorder([reply("tool_use", add(1)), END, RATE])
+    run_plan_assistant("Walk Max", pets, DAY, client=client, existing_tasks=[saved_vet(pets)])
+    assert "saved earlier" in client.calls[-1]["messages"][0]["content"]
+
+
 def test_clarifying_question_call_keeps_the_tools_list_but_forbids_tool_use(pets):
     """Regression: the live API rejected this call when the tools list was dropped."""
     calls = []

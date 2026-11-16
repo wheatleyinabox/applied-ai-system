@@ -1,30 +1,36 @@
 flowchart TD
-    U([Pet owner]) -->|natural-language request| UI[Streamlit text box / CLI entry point]
-    UI --> G{Input guardrails<br/>empty? too long? key present?}
+    U([Pet owner]) -->|natural-language request| UI[Streamlit Task Assistant text box]
+    UI --> G{Input guardrails<br/>empty? too long? no pets? key present?}
     G -->|invalid| ERR[Friendly error<br/>no API call made]
     G -->|valid| AG
 
-    subgraph AGENT[Plan Assistant agent loop - max 3 attempts]
-        AG[1. PLAN<br/>Claude parses request into tool calls] --> ACT[2. ACT<br/>execute tools]
-        ACT --> CHK[3. CHECK<br/>conflicts? unscheduled? matches request?]
-        CHK -->|problems and attempts left| REV[4. REVISE<br/>Claude adjusts tasks]
+    SAVED[(Saved tasks in the plan)] -->|locked, scheduled together with new tasks| CORE
+
+    subgraph AGENT[Task Assistant agent loop - max 3 attempts]
+        AG[1. PLAN<br/>Claude turns the request into tool calls] --> ACT[2. ACT<br/>execute tools]
+        ACT --> CHK[3. CHECK<br/>our code rebuilds the schedule:<br/>conflicts? unscheduled?]
+        CHK -->|problems and attempts left| REV[4. REVISE<br/>problems sent back to Claude]
+        CHK -->|clean| RATE[5. SELF-RATE<br/>Claude rates the plan against the request]
+        RATE -->|rating below 0.7 and attempts left| REV
         REV --> ACT
     end
 
-    ACT <-->|add_task, generate_schedule, get_conflicts| CORE[(PawPal+ core<br/>Owner, Pet, Task, Schedule)]
-    CHK -->|clean plan| CONF[Confidence scorer<br/>rule-based + model self-rating]
-    CHK -->|cap reached| ASK[Ask user to clarify]
+    ACT <-->|add_task, remove_task, generate_schedule, get_conflicts| CORE[(PawPal+ core<br/>Pet, Task, Schedule)]
+    AG -->|replies in words with no tools:<br/>missing detail or duplicate| ASK[Ask the owner<br/>a specific question]
+    CHK -->|cap reached| ASK
     ASK --> U
-    CONF --> OUT[Final plan + explain + confidence]
+    RATE -->|rating ok or last attempt| CONF[Confidence scorer<br/>rule score + model rating]
+    CONF --> OUT[Plan + explanation + confidence<br/>low confidence shows a warning]
     OUT --> UI
     UI --> U
+    U -->|clicks Add to my plan| SAVED
 
     AG -.-> LOG[(agent.log)]
     ACT -.-> LOG
     CHK -.-> LOG
     ERR -.-> LOG
 
-    EV[eval.py<br/>8-10 fixed test prompts] -->|runs the same agent| AG
-    EV --> REP[Pass/fail table + avg confidence]
-    OUT -->|human reviews plan and confidence| U
-    TESTS[pytest suite] -.->|tests| CORE
+    EV[evaluations/eval.py<br/>10 fixed test cases] -->|default: scripted fake Claude<br/>--live: real API| AG
+    EV --> REP[Pass/fail table + average confidence]
+    TESTS[pytest suite<br/>113 tests] -.->|unit tests| CORE
+    TESTS -.->|scripted fake Claude| AG

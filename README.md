@@ -75,7 +75,7 @@ The scheduler works without any key. The Task Assistant needs an Anthropic API k
 
 ## Architecture Overview
 
-The Task Assistant sits on top of the existing PawPal scheduler. The diagram's source is also in [`diagrams/ai-system-design.mmd`](diagrams/ai-system-design.mmd).
+The Task Assistant sits on top of the existing PawPal scheduler. The diagram's source is also in diagrams/ai-system-design.mmd.
 
 ```mermaid
 flowchart TD

@@ -80,9 +80,13 @@ def build_system_prompt(pets: list[Pet], plan_date: date, toolbox: PlanToolbox) 
         f"Planning date: {plan_date:%A %Y-%m-%d}. Schedule window: "
         f"{toolbox.start:%H:%M}-{toolbox.end:%H:%M}.\n"
         f"Pets:\n{pet_lines}\n\n"
-        "Process: call add_task once per task, then generate_schedule, then get_conflicts. "
-        "If there are conflicts or unscheduled tasks, fix them (remove_task and re-add with a "
-        "different priority, time or duration) and check again.\n"
+        f"Already saved in the owner's plan (never add these again; you cannot remove them):\n"
+        f"{chr(10).join(_describe_task(t) for t in toolbox.tasks) or 'none'}\n\n"
+        "Process: call add_task once per NEW task, then generate_schedule, then get_conflicts. "
+        "The schedule covers saved and new tasks together. If there are conflicts or unscheduled "
+        "tasks, fix them by changing the NEW tasks (remove_task and re-add with a different "
+        "priority, time or duration) and check again. If the request only repeats tasks that are "
+        "already saved, reply in words saying so without calling tools.\n"
         f"Priorities: {', '.join(PRIORITIES)}. Use fixed_start only when the owner names a time. "
         "Use repeat_days for recurring tasks (all seven days for daily).\n"
         "Never invent pets, times or durations the owner did not give or clearly imply. If "
@@ -140,8 +144,8 @@ def check_plan(toolbox: PlanToolbox) -> list[str]:
 
     We don't trust the model's claim that it checked; the scheduler is deterministic.
     """
-    if not toolbox.tasks:
-        return ["No tasks were added. The request may be missing details."]
+    if not toolbox.new_tasks:
+        return ["No new tasks were added. The request may be missing details."]
     toolbox.run("generate_schedule", {})
     schedule = toolbox.schedule
     problems = [f"Conflict: '{d.title}' overlaps '{k.title}'." for d, k in schedule.get_conflicts()]
@@ -174,7 +178,9 @@ def _self_rate(client, request: str, toolbox: PlanToolbox) -> tuple[float | None
     """Ask Claude how well the finished plan matches the request. (None, '') on any failure."""
     plan = "\n".join(f"{p.start_time:%H:%M}-{p.end_time:%H:%M} {p.title}"
                      for p in toolbox.schedule.get_tasks_by_time()) or "(nothing is due that day)"
-    saved = "\n".join(_describe_task(t) for t in toolbox.tasks)
+    saved = "\n".join(_describe_task(t) + (" [saved earlier, not part of this request]"
+                                           if id(t) in toolbox.locked else "")
+                      for t in toolbox.tasks)
     prompt = (f"Owner's request:\n{request}\n\n"
               f"Tasks saved, with their repeat rules:\n{saved}\n\n"
               f"Schedule for {toolbox.plan_date:%A %Y-%m-%d} (only tasks due that day appear):\n{plan}\n\n"
@@ -194,8 +200,13 @@ def _self_rate(client, request: str, toolbox: PlanToolbox) -> tuple[float | None
 
 
 def run_plan_assistant(request: str, pets: list[Pet], plan_date: date | None = None,
-                       client=None, max_attempts: int = MAX_ATTEMPTS) -> PlanResult:
-    """Run the whole agent. Never raises: every failure becomes a PlanResult."""
+                       client=None, max_attempts: int = MAX_ATTEMPTS,
+                       existing_tasks: list | None = None) -> PlanResult:
+    """Run the whole agent. Never raises: every failure becomes a PlanResult.
+
+    existing_tasks are the owner's already-saved tasks. They are scheduled together with the
+    new ones but can't be removed, and result.toolbox.new_tasks holds only what this run added.
+    """
     setup_logging()
     plan_date = plan_date or date.today()
     logger.info("request: %r (pets=%s, date=%s)", request, [p.name for p in pets], plan_date)
@@ -207,7 +218,7 @@ def run_plan_assistant(request: str, pets: list[Pet], plan_date: date | None = N
 
     try:
         client = client or anthropic.Anthropic()
-        toolbox = PlanToolbox(pets, plan_date)
+        toolbox = PlanToolbox(pets, plan_date, existing_tasks=existing_tasks)
         system = build_system_prompt(pets, plan_date, toolbox)
         messages: list[dict] = [{"role": "user", "content": request.strip()}]
         problems: list[str] = []
@@ -215,8 +226,9 @@ def run_plan_assistant(request: str, pets: list[Pet], plan_date: date | None = N
         for attempt in range(1, max_attempts + 1):
             logger.info("attempt %d/%d", attempt, max_attempts)
             text, made_calls = _run_pass(client, system, messages, toolbox)
-            if not made_calls and not toolbox.tasks and text:
-                # Claude used no tools and replied in words: it is asking the owner something.
+            if not made_calls and not toolbox.new_tasks and text:
+                # Claude used no tools and replied in words: it is asking the owner something
+                # (or pointing out that the request repeats tasks that are already saved).
                 logger.info("model asked the owner directly: %s", text)
                 return PlanResult(status="needs_clarification", message=text,
                                   attempts=attempt, toolbox=toolbox)

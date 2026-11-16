@@ -314,7 +314,7 @@ assistant_day = st.date_input(
 if st.button("Ask Task Assistant"):
     with st.spinner("The assistant is planning and checking its work..."):
         st.session_state.assistant_result = run_plan_assistant(
-            assistant_request, user.get_pets(), assistant_day
+            assistant_request, user.get_pets(), assistant_day, existing_tasks=user.get_tasks()
         )
 
 result = st.session_state.get("assistant_result")
@@ -322,7 +322,7 @@ if result is not None:
     if result.status == "error":
         st.error(result.message)
     elif result.status == "needs_clarification":
-        st.warning(f"I need one more detail before I can build this plan: {result.message}")
+        st.warning(f"**The assistant needs your input:** {result.message}")
         st.caption(
             "Add the detail to your request above and ask again. "
             f"(Attempts used: {result.attempts})"
@@ -345,7 +345,7 @@ if result is not None:
         with st.expander("Why this plan?"):
             st.markdown(result.explanation)
         if st.button("Add to my plan"):
-            for task in result.toolbox.tasks:
+            for task in result.toolbox.new_tasks:  # saved tasks are already in the user's list
                 user.add_task(task)
             user.set_schedules([result.toolbox.schedule])  # shows in Build Schedule below
             st.session_state.assistant_result = None

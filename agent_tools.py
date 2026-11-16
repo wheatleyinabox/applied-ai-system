@@ -47,7 +47,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "remove_task",
-        "description": "Remove a previously added task by title (case-insensitive). Use to revise a plan.",
+        "description": "Remove a task you added in this conversation, by title (case-insensitive). Use to revise a plan. Tasks saved earlier cannot be removed.",
         "input_schema": {"type": "object",
                          "properties": {"title": {"type": "string"}},
                          "required": ["title"]},
@@ -69,13 +69,22 @@ class PlanToolbox:
     """Holds the agent's working state (pets, tasks, schedule) and exposes the tools."""
 
     def __init__(self, pets: list[Pet], plan_date: date,
-                 start: time = time(8, 0), end: time = time(20, 0)):
+                 start: time = time(8, 0), end: time = time(20, 0),
+                 existing_tasks: list[Task] | None = None):
         self.pets = list(pets)
         self.plan_date = plan_date
         self.start = start
         self.end = end
-        self.tasks: list[Task] = []
+        # Tasks the owner already saved are part of the plan but locked: the agent can
+        # schedule around them, never remove them.
+        self.tasks: list[Task] = list(existing_tasks or [])
+        self.locked: set[int] = {id(t) for t in self.tasks}
         self.schedule: Schedule | None = None
+
+    @property
+    def new_tasks(self) -> list[Task]:
+        """Tasks the agent added in this run (everything except the locked, saved ones)."""
+        return [t for t in self.tasks if id(t) not in self.locked]
 
     # ---- helpers -------------------------------------------------------
     def _find_pet(self, name: str) -> Pet:
@@ -131,9 +140,14 @@ class PlanToolbox:
         return {"ok": True, "added": task.title, "total_tasks": len(self.tasks)}
 
     def remove_task(self, title: str) -> dict:
-        matches = [t for t in self.tasks if t.title.lower() == str(title).strip().lower()]
+        wanted = str(title).strip().lower()
+        matches = [t for t in self.new_tasks if t.title.lower() == wanted]
         if not matches:
-            raise ToolError(f"No task titled '{title}'. Current tasks: {[t.title for t in self.tasks]}.")
+            if any(t.title.lower() == wanted for t in self.tasks):
+                raise ToolError(f"'{title}' was saved earlier and can't be removed here. "
+                                "Change one of the NEW tasks instead.")
+            raise ToolError(f"No task titled '{title}'. "
+                            f"Tasks you can remove: {[t.title for t in self.new_tasks]}.")
         for t in matches:
             self.tasks.remove(t)
         return {"ok": True, "removed": len(matches), "total_tasks": len(self.tasks)}

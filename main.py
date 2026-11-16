@@ -1,8 +1,7 @@
 from datetime import date, time, timedelta
 
-from types import SimpleNamespace
-
 from agent_tools import PlanToolbox
+from fake_claude import FakeClaude, reply, say, tool_call
 from plan_assistant import run_plan_assistant
 from pawpal_system import ALL_DAYS, Pet, User, Task, Schedule
 
@@ -239,21 +238,6 @@ def main() -> None:
 
     # Step 11: the Plan Assistant agent, driven by a scripted fake Claude (no API call, no cost)
     print("\nStep 11: Plan Assistant (offline, scripted fake Claude)")
-
-    def tool_call(n, name, **args):
-        return SimpleNamespace(type="tool_use", id=f"t{n}", name=name, input=args)
-
-    def reply(stop, *blocks):
-        return SimpleNamespace(stop_reason=stop, content=list(blocks))
-
-    def say(text):
-        return SimpleNamespace(type="text", text=text)
-
-    class FakeClaude:
-        """Hands back pre-written replies in order, like the real API would."""
-        def __init__(self, replies):
-            self.replies = list(replies)
-            self.beta = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: self.replies.pop(0)))
 
     pins = reply("tool_use",
                  tool_call(1, "add_task", title="Meds", duration=5, priority="high",

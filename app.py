@@ -10,11 +10,9 @@ st.title("🐾 PawPal+")
 # Streamlit reruns this whole script on every interaction, so a plain variable would be
 # recreated each time. Only create the User if the session "vault" doesn't have one yet.
 if "user" not in st.session_state:
-    st.session_state.user = User(username="Valen", email="valen123@email.com", password="pawpal123")
+    st.session_state.user = User(username="User", email="user123@email.com", password="pawpal123")
 
 user = st.session_state.user  # the same object on every rerun
-
-st.divider()
 
 st.subheader("Owner")
 owner_name = st.text_input("Owner name", value=user.get_username())
@@ -97,78 +95,78 @@ if user.get_pets():
             user.remove_pet(pet)
             st.rerun()
 
-st.markdown("### Tasks")
-st.caption("Tasks are scheduled in priority order, so high priority tasks get the earliest slots.")
+# st.markdown("### Tasks")
+# st.caption("Tasks are scheduled in priority order, so high priority tasks get the earliest slots.")
 
-PRIORITIES = {"high": 3, "medium": 2, "low": 1}  # higher number is scheduled first
-REPEATS = ["One-time", "Daily", "Specific days"]
+# PRIORITIES = {"high": 3, "medium": 2, "low": 1}  # higher number is scheduled first
+# REPEATS = ["One-time", "Daily", "Specific days"]
 
 
-def repeat_settings(choice: str, one_time_date: date, picked_days: list[int]):
-    """Turn the form's repeat widgets into (repeat_days, on_date); None if days are missing."""
-    if choice == "Daily":
-        return list(ALL_DAYS), None
-    if choice == "Specific days":
-        return (picked_days, None) if picked_days else None
-    return [], one_time_date
+# def repeat_settings(choice: str, one_time_date: date, picked_days: list[int]):
+#     """Turn the form's repeat widgets into (repeat_days, on_date); None if days are missing."""
+#     if choice == "Daily":
+#         return list(ALL_DAYS), None
+#     if choice == "Specific days":
+#         return (picked_days, None) if picked_days else None
+#     return [], one_time_date
 
-with st.form("add_task_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        task_title = st.text_input("Task title", value="Morning walk")
-    with col2:
-        duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
-    with col3:
-        priority_label = st.selectbox("Priority", list(PRIORITIES), index=0)
-    task_desc = st.text_input("Description (optional)")
-    col1, col2 = st.columns(2)
-    with col1:
-        has_fixed = st.checkbox("Fixed start time (e.g. a vet appointment)")
-    with col2:
-        fixed_value = st.time_input("Start at", value=time(9, 0))
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        repeat_choice = st.selectbox("Repeats", REPEATS)
-    with col2:
-        one_time_date = st.date_input("Date (one-time tasks)", value=date.today())
-    with col3:
-        picked_days = st.multiselect(
-            "Days (specific days)", ALL_DAYS, format_func=lambda d: WEEKDAY_NAMES[d]
-        )
-    pet_options = list(range(len(user.get_pets())))  # indices, so duplicate names still work
-    task_pet_indexes = st.multiselect(
-        "Pets for this task", pet_options, format_func=lambda i: user.get_pets()[i].get_name()
-    )
-    if st.form_submit_button("Add task"):
-        repeat = repeat_settings(repeat_choice, one_time_date, picked_days)
-        if not task_title.strip():
-            st.warning("Please enter a task title.")
-        elif repeat is None:
-            st.warning("Pick at least one day for a task that repeats on specific days.")
-        else:
-            task = Task(
-                title=task_title.strip(),
-                desc=task_desc.strip(),
-                duration=int(duration),
-                priority=PRIORITIES[priority_label],
-                fixed_start=fixed_value if has_fixed else None,
-                repeat_days=repeat[0],
-                on_date=repeat[1],
-            )
-            for i in task_pet_indexes:
-                task.add_pet(user.get_pets()[i])
-            user.add_task(task)
+# with st.form("add_task_form", clear_on_submit=True):
+#     col1, col2, col3 = st.columns(3)
+#     with col1:
+#         task_title = st.text_input("Task title", value="Morning walk")
+#     with col2:
+#         duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
+#     with col3:
+#         priority_label = st.selectbox("Priority", list(PRIORITIES), index=0)
+#     task_desc = st.text_input("Description (optional)")
+#     col1, col2 = st.columns(2)
+#     with col1:
+#         has_fixed = st.checkbox("Fixed start time (e.g. a vet appointment)")
+#     with col2:
+#         fixed_value = st.time_input("Start at", value=time(9, 0))
+#     col1, col2, col3 = st.columns(3)
+#     with col1:
+#         repeat_choice = st.selectbox("Repeats", REPEATS)
+#     with col2:
+#         one_time_date = st.date_input("Date (one-time tasks)", value=date.today())
+#     with col3:
+#         picked_days = st.multiselect(
+#             "Days (specific days)", ALL_DAYS, format_func=lambda d: WEEKDAY_NAMES[d]
+#         )
+#     pet_options = list(range(len(user.get_pets())))  # indices, so duplicate names still work
+#     task_pet_indexes = st.multiselect(
+#         "Pets for this task", pet_options, format_func=lambda i: user.get_pets()[i].get_name()
+#     )
+#     if st.form_submit_button("Add task"):
+#         repeat = repeat_settings(repeat_choice, one_time_date, picked_days)
+#         if not task_title.strip():
+#             st.warning("Please enter a task title.")
+#         elif repeat is None:
+#             st.warning("Pick at least one day for a task that repeats on specific days.")
+#         else:
+#             task = Task(
+#                 title=task_title.strip(),
+#                 desc=task_desc.strip(),
+#                 duration=int(duration),
+#                 priority=PRIORITIES[priority_label],
+#                 fixed_start=fixed_value if has_fixed else None,
+#                 repeat_days=repeat[0],
+#                 on_date=repeat[1],
+#             )
+#             for i in task_pet_indexes:
+#                 task.add_pet(user.get_pets()[i])
+#             user.add_task(task)
 
-def scheduled_label(schedule, task) -> str:
-    """The task's time range in the current schedule, or a note if it isn't placed."""
-    if schedule is None:
-        return "not yet"
-    if schedule.get_plan_date() and not task.occurs_on(schedule.get_plan_date()):
-        return "not due that day"
-    placement = schedule.get_placement(task)
-    if placement is None:
-        return "not yet"
-    return f"{placement.get_start_time():%H:%M} - {placement.get_end_time():%H:%M}"
+# def scheduled_label(schedule, task) -> str:
+#     """The task's time range in the current schedule, or a note if it isn't placed."""
+#     if schedule is None:
+#         return "not yet"
+#     if schedule.get_plan_date() and not task.occurs_on(schedule.get_plan_date()):
+#         return "not due that day"
+#     placement = schedule.get_placement(task)
+#     if placement is None:
+#         return "not yet"
+#     return f"{placement.get_start_time():%H:%M} - {placement.get_end_time():%H:%M}"
 
 
 def pet_filter(key: str):
@@ -184,113 +182,112 @@ def pet_filter(key: str):
     )
     return None if idx is None else pets[idx]
 
+# if user.get_tasks():
+#     st.write("Current tasks:")
+#     col1, col2 = st.columns(2)
+#     with col1:
+#         task_pet = pet_filter("task_pet_filter")
+#     with col2:
+#         task_sort = st.selectbox("Sort by", ["Order added", "Scheduled time"], key="task_sort")
+#     current = user.get_schedules()[0] if user.get_schedules() else None
+#     shown = user.get_tasks()
+#     if task_sort == "Scheduled time" and current:
+#         shown = current.sort_tasks_by_time(shown)
+#     if task_pet is not None:
+#         shown = filter_by_pet(shown, task_pet)
+#     if shown:
+#         st.table(
+#             [
+#                 {
+#                     "Title": t.get_title(),
+#                     "Duration (min)": t.get_duration(),
+#                     "Priority": t.get_priority(),
+#                     "Pets": ", ".join(p.get_name() for p in t.get_pets()),
+#                     "Fixed start": f"{t.get_fixed_start():%H:%M}" if t.get_fixed_start() else "flexible",
+#                     "Repeats": t.describe_repeat(),
+#                     "Scheduled": scheduled_label(current, t),
+#                 }
+#                 for t in shown
+#             ]
+#         )
+#     else:
+#         st.info("No tasks for that pet.")
+# else:
+#     st.info("No tasks yet. Add one above.")
 
-if user.get_tasks():
-    st.write("Current tasks:")
-    col1, col2 = st.columns(2)
-    with col1:
-        task_pet = pet_filter("task_pet_filter")
-    with col2:
-        task_sort = st.selectbox("Sort by", ["Order added", "Scheduled time"], key="task_sort")
-    current = user.get_schedules()[0] if user.get_schedules() else None
-    shown = user.get_tasks()
-    if task_sort == "Scheduled time" and current:
-        shown = current.sort_tasks_by_time(shown)
-    if task_pet is not None:
-        shown = filter_by_pet(shown, task_pet)
-    if shown:
-        st.table(
-            [
-                {
-                    "Title": t.get_title(),
-                    "Duration (min)": t.get_duration(),
-                    "Priority": t.get_priority(),
-                    "Pets": ", ".join(p.get_name() for p in t.get_pets()),
-                    "Fixed start": f"{t.get_fixed_start():%H:%M}" if t.get_fixed_start() else "flexible",
-                    "Repeats": t.describe_repeat(),
-                    "Scheduled": scheduled_label(current, t),
-                }
-                for t in shown
-            ]
-        )
-    else:
-        st.info("No tasks for that pet.")
-else:
-    st.info("No tasks yet. Add one above.")
-
-if user.get_tasks():
-    with st.expander("Edit or remove a task"):
-        task_idx = st.selectbox(
-            "Task", range(len(user.get_tasks())), format_func=lambda i: user.get_tasks()[i].get_title()
-        )
-        task = user.get_tasks()[task_idx]
-        current_label = next(k for k, v in PRIORITIES.items() if v == task.get_priority()) \
-            if task.get_priority() in PRIORITIES.values() else "high"
-        if task.get_repeat_days():
-            current_repeat = "Daily" if sorted(task.get_repeat_days()) == ALL_DAYS else "Specific days"
-        else:
-            current_repeat = "One-time"
-        with st.form(f"edit_task_form_{task_idx}"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                new_title = st.text_input("Task title", value=task.get_title())
-            with col2:
-                new_duration = st.number_input(
-                    "Duration (minutes)", min_value=1, max_value=240,
-                    value=min(max(task.get_duration(), 1), 240),
-                )
-            with col3:
-                new_label = st.selectbox(
-                    "Priority", list(PRIORITIES), index=list(PRIORITIES).index(current_label)
-                )
-            new_desc = st.text_input("Description", value=task.get_desc())
-            col1, col2 = st.columns(2)
-            with col1:
-                new_has_fixed = st.checkbox("Fixed start time", value=task.get_fixed_start() is not None)
-            with col2:
-                new_fixed = st.time_input("Start at", value=task.get_fixed_start() or time(9, 0))
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                new_repeat = st.selectbox("Repeats", REPEATS, index=REPEATS.index(current_repeat))
-            with col2:
-                new_one_time = st.date_input("Date (one-time tasks)", value=task.get_on_date() or date.today())
-            with col3:
-                new_days = st.multiselect(
-                    "Days (specific days)", ALL_DAYS,
-                    default=task.get_repeat_days() if current_repeat == "Specific days" else [],
-                    format_func=lambda d: WEEKDAY_NAMES[d],
-                )
-            all_pets = user.get_pets()
-            new_pet_idxs = st.multiselect(
-                "Pets for this task",
-                list(range(len(all_pets))),
-                default=[i for i, p in enumerate(all_pets) if any(p is q for q in task.get_pets())],
-                format_func=lambda i: all_pets[i].get_name(),
-            )
-            save_col, delete_col = st.columns(2)
-            save_task = save_col.form_submit_button("Save changes")
-            delete_task = delete_col.form_submit_button("Delete task")
-        if save_task:
-            new_repeat_settings = repeat_settings(new_repeat, new_one_time, new_days)
-            if new_repeat_settings is None:
-                st.warning("Pick at least one day for a task that repeats on specific days.")
-            elif new_title.strip():
-                task.set_title(new_title.strip())
-                task.set_repeat_days(new_repeat_settings[0])
-                task.set_on_date(new_repeat_settings[1])
-                task.set_duration(int(new_duration))
-                task.set_priority(PRIORITIES[new_label])
-                task.set_desc(new_desc.strip())
-                task.set_fixed_start(new_fixed if new_has_fixed else None)
-                task.set_pets([all_pets[i] for i in new_pet_idxs])
-                user.set_schedules([])  # the old schedule is out of date, so regenerate
-                st.rerun()
-            else:
-                st.warning("Task title can't be empty.")
-        if delete_task:
-            user.remove_task(task)
-            user.set_schedules([])
-            st.rerun()
+# if user.get_tasks():
+#     with st.expander("Edit or remove a task"):
+#         task_idx = st.selectbox(
+#             "Task", range(len(user.get_tasks())), format_func=lambda i: user.get_tasks()[i].get_title()
+#         )
+#         task = user.get_tasks()[task_idx]
+#         current_label = next(k for k, v in PRIORITIES.items() if v == task.get_priority()) \
+#             if task.get_priority() in PRIORITIES.values() else "high"
+#         if task.get_repeat_days():
+#             current_repeat = "Daily" if sorted(task.get_repeat_days()) == ALL_DAYS else "Specific days"
+#         else:
+#             current_repeat = "One-time"
+#         with st.form(f"edit_task_form_{task_idx}"):
+#             col1, col2, col3 = st.columns(3)
+#             with col1:
+#                 new_title = st.text_input("Task title", value=task.get_title())
+#             with col2:
+#                 new_duration = st.number_input(
+#                     "Duration (minutes)", min_value=1, max_value=240,
+#                     value=min(max(task.get_duration(), 1), 240),
+#                 )
+#             with col3:
+#                 new_label = st.selectbox(
+#                     "Priority", list(PRIORITIES), index=list(PRIORITIES).index(current_label)
+#                 )
+#             new_desc = st.text_input("Description", value=task.get_desc())
+#             col1, col2 = st.columns(2)
+#             with col1:
+#                 new_has_fixed = st.checkbox("Fixed start time", value=task.get_fixed_start() is not None)
+#             with col2:
+#                 new_fixed = st.time_input("Start at", value=task.get_fixed_start() or time(9, 0))
+#             col1, col2, col3 = st.columns(3)
+#             with col1:
+#                 new_repeat = st.selectbox("Repeats", REPEATS, index=REPEATS.index(current_repeat))
+#             with col2:
+#                 new_one_time = st.date_input("Date (one-time tasks)", value=task.get_on_date() or date.today())
+#             with col3:
+#                 new_days = st.multiselect(
+#                     "Days (specific days)", ALL_DAYS,
+#                     default=task.get_repeat_days() if current_repeat == "Specific days" else [],
+#                     format_func=lambda d: WEEKDAY_NAMES[d],
+#                 )
+#             all_pets = user.get_pets()
+#             new_pet_idxs = st.multiselect(
+#                 "Pets for this task",
+#                 list(range(len(all_pets))),
+#                 default=[i for i, p in enumerate(all_pets) if any(p is q for q in task.get_pets())],
+#                 format_func=lambda i: all_pets[i].get_name(),
+#             )
+#             save_col, delete_col = st.columns(2)
+#             save_task = save_col.form_submit_button("Save changes")
+#             delete_task = delete_col.form_submit_button("Delete task")
+#         if save_task:
+#             new_repeat_settings = repeat_settings(new_repeat, new_one_time, new_days)
+#             if new_repeat_settings is None:
+#                 st.warning("Pick at least one day for a task that repeats on specific days.")
+#             elif new_title.strip():
+#                 task.set_title(new_title.strip())
+#                 task.set_repeat_days(new_repeat_settings[0])
+#                 task.set_on_date(new_repeat_settings[1])
+#                 task.set_duration(int(new_duration))
+#                 task.set_priority(PRIORITIES[new_label])
+#                 task.set_desc(new_desc.strip())
+#                 task.set_fixed_start(new_fixed if new_has_fixed else None)
+#                 task.set_pets([all_pets[i] for i in new_pet_idxs])
+#                 user.set_schedules([])  # the old schedule is out of date, so regenerate
+#                 st.rerun()
+#             else:
+#                 st.warning("Task title can't be empty.")
+#         if delete_task:
+#             user.remove_task(task)
+#             user.set_schedules([])
+#             st.rerun()
 
 st.divider()
 
